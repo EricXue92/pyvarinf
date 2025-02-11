@@ -24,8 +24,11 @@ def evaluate(variational_parameter):
     """
     assert isinstance(variational_parameter, VariationalParameter), \
         "Incorrect type."
+
+    eps_on_same_device = variational_parameter.eps.to(variational_parameter.rho.device)
+
     return variational_parameter.mean + \
-        (1 + variational_parameter.rho.exp()).log() * variational_parameter.eps
+        (1 + variational_parameter.rho.exp()).log() * eps_on_same_device
 
 
 def rebuild_parameters(dico, module, epsilon_setting):
