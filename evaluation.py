@@ -1,12 +1,12 @@
 from __future__ import print_function
-import argparse
 import numpy as np
 import torch
 from pathlib import Path
 from data_setup import get_all_test_dataloaders
 import pyvarinf
-from utils import set_seed
 from build_model import Build_MNISTClassifier
+import os
+import pandas as pd
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 # set_seed(42)
@@ -71,7 +71,6 @@ def evaluate_vi_model(models, data_loader):
     print(f"Variance: {var:.4f}")
     return mean_acc, var
 
-
 def save_model(model, target_dir="model", model_name="vi_model.pth"):
     assert model_name.endswith(".pth") or model_name.endswith(".pt"), "model_name should end with '.pt' or '.pth'"
     target_dir_path = Path(target_dir)
@@ -84,29 +83,34 @@ def load_model(model_path="model/vi_model.pth"):
     model = Build_MNISTClassifier(10)
     var_model = pyvarinf.Variationalize(model)
     var_model.load_state_dict(torch.load(model_path))
-
-    n_samples = 5
+    n_samples = 100
     models = [pyvarinf.Sample(var_model) for _ in range(n_samples)]
     for model in models:
         model.draw()
         model.to(device)
-
-    # model = pyvarinf.Sample(var_model)
-    # model.draw()
-    # model.to(device)
     return models
 
+def save_results_to_csv(results, result_file_path):
+    os.makedirs(os.path.dirname(result_file_path), exist_ok=True)
+    df = pd.DataFrame(results)
+    df.index = ["Test", "Shift", "OOD"]
+    if not os.path.isfile(result_file_path):
+        df.to_csv(result_file_path, index=True, header=True)
+    else:
+        df.to_csv(result_file_path, mode='a', index=False, header=False)
+
 if __name__ == '__main__':
+    res = {"acc": [], "uncertainty": []}
     models = load_model()
     for data in [test_loader, shift_loader, ood_loader]:
-        evaluate_vi_model(models, data)
+        mean_acc, var = evaluate_vi_model(models, data)
+        mean_acc, var = round(mean_acc, 4), round(var, 4)
+        res["acc"].append(mean_acc)
+        res["uncertainty"].append(var)
+    file_path = Path("results/vi_results_mnist.csv")
+    save_results_to_csv(res, file_path)
 
-    # for model in models:
-    #     for data in [test_loader, shift_loader, ood_loader]:
-    #         evaluate_bnn_shift(model, data, num_samples=10)
 
-    # shift_acc(model, test_loader)
-    # accuracy, uncertainties = evaluate_bnn(model, shift_loader, num_samples=10)
 
 
 

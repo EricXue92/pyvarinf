@@ -1,10 +1,5 @@
-
-import torch
 import torch.nn as nn
-import torchvision
-from sngp_wrapper.covert_utils import replace_layer_with_gaussian, convert_to_sn_my
 import torch.nn.functional as F
-
 
 class MNISTClassifier(nn.Module):
     def __init__(self, num_classes):
