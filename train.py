@@ -2,7 +2,6 @@ from __future__ import print_function
 import argparse
 import pyvarinf
 import torch
-import torch.nn.functional as F
 from pathlib import Path
 from torchvision import datasets, transforms
 from torch.autograd import Variable
@@ -10,40 +9,43 @@ from utils import set_seed
 from build_model import Build_MNISTClassifier
 from No_image import model_builder
 from data import create_dataloaders
-from data_setup import get_all_test_dataloaders
+
 import torch.nn as nn
 
-
+from data_setup import get_all_test_dataloaders
 device = "cuda" if torch.cuda.is_available() else "cpu"
 set_seed(42)
 
 
 loss_fn = nn.BCEWithLogitsLoss()
-# Training settings
-parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-parser.add_argument('--batch-size', type=int, default=512, metavar='N',
-                    help='input batch size for training (default: 64)')
-parser.add_argument('--test-batch-size', type=int, default=1024, metavar='N',
-                    help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=20, metavar='N',
-                    help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.01, metavar='LR',  # 0.0001
-                    help='learning rate (default: 0.01)')
-parser.add_argument('--weight_decay', type=float, default=1e-4, metavar='WD',
-                    help='weight_decay (default: 0.0001)')
-parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
-                    help='SGD momentum (default: 0.5)')
-parser.add_argument('--seed', type=int, default=1, metavar='S',
-                    help='random seed (default: 1)')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                    help='how many batches to wait before logging training status')
-parser.add_argument('--prior', type=str, default='gaussian', metavar='P',
-                    help='prior used (default: gaussian)',
-                    choices=['gaussian', 'mixtgauss', 'conjugate', 'conjugate_known_mean'])
-parser.add_argument('--dataset', type=str, default='Diabetes',
-                    help='Which data (default: MNIST)',
-                    choices=['MNIST', 'Diabetes'])
-args = parser.parse_args()
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser.add_argument('--batch-size', type=int, default=512, metavar='N',
+                        help='input batch size for training (default: 64)')
+    parser.add_argument('--test-batch-size', type=int, default=1024, metavar='N',
+                        help='input batch size for testing (default: 1000)')
+    parser.add_argument('--epochs', type=int, default=20, metavar='N',
+                        help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',  # 0.0001
+                        help='learning rate (default: 0.01)')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, metavar='WD',
+                        help='weight_decay (default: 0.0001)')
+    parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
+                        help='SGD momentum (default: 0.5)')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
+    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                        help='how many batches to wait before logging training status')
+    parser.add_argument('--prior', type=str, default='gaussian', metavar='P',
+                        help='prior used (default: gaussian)',
+                        choices=['gaussian', 'mixtgauss', 'conjugate', 'conjugate_known_mean'])
+    parser.add_argument('--dataset', type=str, default='Diabetes',
+                        help='Which data (default: MNIST)',
+                        choices=['MNIST', 'Diabetes'])
+    return parser.parse_args()
+
+args = parse_arguments()
 
 # setting up prior parameters
 prior_parameters = {}
@@ -104,13 +106,11 @@ def train(var_model, data_loader, epoch):
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = var_model(data)
-
-        # loss_error = F.nll_loss(output, target)
         loss_error = loss_fn(output, target)
         loss_prior = var_model.prior_loss() / 87040  #59904  87040 drop_out=True
         loss = loss_error + loss_prior
         loss.backward()
-        optimizer.step()
+
         if batch_idx % args.log_interval == 0:
             print(
                 f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(data_loader.dataset)} ({100. * batch_idx / len(data_loader):.0f}%)]'

@@ -35,6 +35,7 @@ def create_dataloaders():
 
     # Load out-of-distribution (OOD) data
     ood = pd.read_csv("heart_attack.csv")
+    ood_y = ood['Heart Attack Risk'].values
 
     # Add Gaussian noise to the OOD data
     ood_noises = np.random.normal(loc=0, scale=0.7, size=ood.shape) # 0, 0.7
@@ -65,13 +66,14 @@ def create_dataloaders():
     y_shift_tensor = torch.tensor(y_shift.values, dtype=torch.float32)
 
     OOD_tensor = torch.tensor(OOD, dtype=torch.float32)
+    ood_y = torch.tensor(ood_y, dtype=torch.float32).view(-1, 1)
 
     # Create PyTorch datasets
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
     shift_dataset = TensorDataset(X_shift_tensor, y_shift_tensor)
-    ood_dataset = TensorDataset(OOD_tensor, torch.zeros(OOD_tensor.shape[0], dtype=torch.float32))  # Dummy labels for OOD
+    ood_dataset = TensorDataset(OOD_tensor, ood_y)
 
     # Create DataLoaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
@@ -88,3 +90,5 @@ def create_dataloaders():
         "test": test_loader,
         "shift": shift_loader,
         "ood": ood_loader }
+
+create_dataloaders()

@@ -1,18 +1,38 @@
 from __future__ import print_function
+import sys  # /home/xuelong/UI
 import numpy as np
 import torch
 from pathlib import Path
-from data_setup import get_all_test_dataloaders
+# from data_setup import get_all_test_dataloaders
+
+from train import parse_arguments
 import pyvarinf
 from build_model import Build_MNISTClassifier
 import os
 import pandas as pd
 
+# caution: path[0] is reserved for script path (or '' in REPL)
+sys.path.insert(1, '/home/xuelong/UI')
+
+import data_setup
+from No_image import model_builder
+
+from data import create_dataloaders
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
-# set_seed(42)
+
 
 ROTATE_DEGS, ROLL_PIXELS = 2, 4
-test_loader, shift_loader, ood_loader = get_all_test_dataloaders(batch_size=512, rotate_degs=ROTATE_DEGS, roll_pixels=ROLL_PIXELS) # 4
+
+
+args = parse_arguments()
+
+test_loader, shift_loader, ood_loader = data_setup.get_all_test_dataloaders(batch_size=512, rotate_degs=ROTATE_DEGS, roll_pixels=ROLL_PIXELS) # 4
+
+
+res = create_dataloaders()
+input_dim, train_loader, val_loader, test_loader, shift_loader, ood_loader = (res["input_dim"], res["train"], res["val"],
+                                                                              res["test"], res["shift"], res["ood"])
 
 kwargs = {'num_workers': 4, 'pin_memory': True}
 #
@@ -25,41 +45,33 @@ def shift_acc(model, data_loader):
             X, y= X.to(device), y.to(device)
             batch_size = y.size(0)
             logits = model(X)
-            pred_y = torch.argmax(logits, dim=1)
+            if args.dataset == "MNIST":
+                pred_y = torch.argmax(logits, dim=1)
+            elif args.dataset == "Diabetes":
+                pred_y = (torch.sigmoid(logits) > 0.5)
+                print(f"pred_y shape : {pred_y.shape}")
+            else:
+                raise ValueError("Unknown dataset")
             correct += (pred_y == y).sum().item()
             total_samples += batch_size
     acc = correct / total_samples
     print(f"Each accuracy: {acc * 100:.2f}%")
     return acc
 
-def evaluate_bnn_shift(model, data_loader, num_samples=50):
-    model.eval()  # Set model to evaluation mode
-    correct = 0
-    total_samples = 0
-    uncertainties = []
-    with torch.no_grad():  # Disable gradient computation for evaluation
+# with no ground truth labels for OOD data (y here is dummy variable)
+def ood_acc(model, data_loader):
+    model.eval()
+    all_preds = []
+
+    with torch.no_grad():
         for X, y in data_loader:
             X, y = X.to(device), y.to(device)
-            batch_size = y.size(0)
-            # Perform Monte Carlo sampling for BNN
-            predictions = []
-            for _ in range(num_samples):
-                # Forward pass with weight sampling (BNN-specific)
-                logits = model(X)
-                probs = torch.softmax(logits, dim=1)
-                predictions.append(probs)
-            predictions = torch.stack(predictions, dim=0)
-            predictive_mean = predictions.mean(dim=0)
-            pred_y = torch.argmax(predictive_mean, dim=1)
-            correct += (pred_y == y).sum().item()
-            total_samples += batch_size
-            std = predictions.var(dim=0).mean(dim=1)
-            uncertainties.extend(std.cpu().numpy())
-    accuracy = correct / total_samples
-    uncertainties = np.array(uncertainties)
-    print(f"Test Accuracy: {accuracy * 100:.2f}%")
-    print(f"Mean Uncertainty: {np.mean(uncertainties):.4f}")
-    return accuracy, uncertainties
+            logits = model(X)
+            preds = torch.sigmoid(logits)
+            all_preds.append(preds)
+    all_preds = torch.cat(all_preds, dim=0)
+    return all_preds
+
 
 def evaluate_vi_model(models, data_loader):
     accuracies = []
@@ -80,9 +92,16 @@ def save_model(model, target_dir="model", model_name="vi_model.pth"):
     torch.save(model.state_dict(), model_save_path)
 
 def load_model(model_path="model/vi_model.pth"):
-    model = Build_MNISTClassifier(10)
+    if args.dataset == "MNIST":
+        model = Build_MNISTClassifier(10)
+    elif args.dataset == "Diabetes":
+        model = model_builder.Build_DeepResNet(input_dim=input_dim)
+    else:
+        raise ValueError("Unknown dataset")
+
     var_model = pyvarinf.Variationalize(model)
     var_model.load_state_dict(torch.load(model_path))
+
     n_samples = 100
     models = [pyvarinf.Sample(var_model) for _ in range(n_samples)]
     for model in models:
@@ -101,13 +120,19 @@ def save_results_to_csv(results, result_file_path):
 
 if __name__ == '__main__':
     res = {"acc": [], "uncertainty": []}
-    models = load_model()
-    for data in [test_loader, shift_loader, ood_loader]:
+    if args.dataset == "MNIST":
+        models = load_model("model/vi_model_MNIST.pth")
+        file_path = Path("results/vi_results_mnist.csv")
+    else:
+        models = load_model("model/vi_model_Diabetes.pth")
+        file_path = Path("results/vi_results_diabetes.csv")
+
+    for data in [test_loader, shift_loader, ood_loader ]:
         mean_acc, var = evaluate_vi_model(models, data)
         mean_acc, var = round(mean_acc, 4), round(var, 4)
         res["acc"].append(mean_acc)
         res["uncertainty"].append(var)
-    file_path = Path("results/vi_results_mnist.csv")
+
     save_results_to_csv(res, file_path)
 
 
